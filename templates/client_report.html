@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Аудит сайта — {{ url }}</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: #f8fafc;
+    color: #1e293b;
+    line-height: 1.6;
+  }
+  .page { max-width: 860px; margin: 0 auto; padding: 40px 20px 60px; }
+
+  /* Header */
+  .header {
+    background: #0f172a;
+    color: #fff;
+    border-radius: 16px;
+    padding: 36px 40px;
+    margin-bottom: 32px;
+  }
+  .header-label {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: #94a3b8;
+    margin-bottom: 8px;
+  }
+  .header h1 { font-size: 26px; font-weight: 700; margin-bottom: 6px; }
+  .header-url {
+    font-size: 15px;
+    color: #60a5fa;
+    word-break: break-all;
+  }
+  .header-meta {
+    margin-top: 20px;
+    display: flex;
+    gap: 28px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .meta-item { font-size: 13px; color: #94a3b8; }
+  .meta-item strong { color: #e2e8f0; }
+
+  /* Score Hero */
+  .score-hero {
+    background: #fff;
+    border-radius: 16px;
+    padding: 32px 40px;
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  .score-circle {
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    border: 5px solid;
+  }
+  .score-circle .num {
+    font-size: 34px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .score-circle .denom {
+    font-size: 13px;
+    opacity: .6;
+    margin-top: 2px;
+  }
+  .score-hero-text h2 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .score-hero-text p { font-size: 14px; color: #64748b; max-width: 440px; }
+
+  /* Table */
+  .section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: #1e293b;
+    margin-bottom: 16px;
+    margin-top: 8px;
+  }
+  .criteria-list { display: flex; flex-direction: column; gap: 12px; }
+  .criterion {
+    background: #fff;
+    border-radius: 12px;
+    padding: 18px 22px;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    display: grid;
+    grid-template-columns: 36px 1fr auto;
+    gap: 14px;
+    align-items: start;
+  }
+  .criterion-num {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    font-weight: 700;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .criterion-body { flex: 1; }
+  .criterion-name { font-size: 15px; font-weight: 600; margin-bottom: 6px; }
+  .criterion-problem {
+    font-size: 13px;
+    color: #475569;
+    line-height: 1.5;
+  }
+  .criterion-score-block { text-align: right; flex-shrink: 0; }
+  .score-badge {
+    display: inline-block;
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1;
+  }
+  .score-label { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+  .bar-track {
+    width: 80px;
+    height: 5px;
+    background: #e2e8f0;
+    border-radius: 99px;
+    overflow: hidden;
+    margin-top: 8px;
+    margin-left: auto;
+  }
+  .bar-fill { height: 100%; border-radius: 99px; }
+
+  /* CTA */
+  .cta-block {
+    background: linear-gradient(135deg, #1e40af 0%, #0f172a 100%);
+    border-radius: 16px;
+    padding: 36px 40px;
+    margin-top: 32px;
+    text-align: center;
+    color: #fff;
+  }
+  .cta-block h2 { font-size: 22px; font-weight: 700; margin-bottom: 10px; }
+  .cta-block p { font-size: 15px; color: #94a3b8; margin-bottom: 24px; }
+  .cta-btn {
+    display: inline-block;
+    background: #3b82f6;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    padding: 14px 32px;
+    border-radius: 10px;
+    text-decoration: none;
+    transition: background .2s;
+  }
+  .cta-btn:hover { background: #2563eb; }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    font-size: 12px;
+    color: #94a3b8;
+    margin-top: 36px;
+  }
+
+  @media (max-width: 600px) {
+    .header { padding: 24px; }
+    .score-hero { flex-direction: column; gap: 20px; padding: 24px; }
+    .criterion { grid-template-columns: 28px 1fr auto; gap: 10px; padding: 14px 16px; }
+    .bar-track { width: 60px; }
+    .cta-block { padding: 24px 20px; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <div class="header">
+    <div class="header-label">Автоматический аудит сайта</div>
+    <h1>Результаты проверки</h1>
+    <div class="header-url">{{ url }}</div>
+    <div class="header-meta">
+      <div class="meta-item">Дата: <strong>{{ date }}</strong></div>
+      <div class="meta-item">Критериев: <strong>10</strong></div>
+      <div class="meta-item">Тип: <strong>Полный аудит</strong></div>
+    </div>
+  </div>
+
+  <div class="score-hero">
+    <div class="score-circle" style="border-color: {{ average_color }}; color: {{ average_color }};">
+      <span class="num">{{ average }}</span>
+      <span class="denom">из 10</span>
+    </div>
+    <div class="score-hero-text">
+      <h2>Средняя оценка сайта</h2>
+      <p>Ниже — детальный разбор по каждому из 10 критериев. Оценка показывает насколько хорошо ваш сайт справляется с задачей привлечения и конвертации посетителей.</p>
+    </div>
+  </div>
+
+  <div class="section-title">Результаты по критериям</div>
+
+  <div class="criteria-list">
+    {% for s in scores %}
+    <div class="criterion">
+      <div class="criterion-num" style="background: {{ s.color }}1a; color: {{ s.color }};">
+        {{ s.id }}
+      </div>
+      <div class="criterion-body">
+        <div class="criterion-name">{{ s.name }}</div>
+        {% if s.problem %}
+        <div class="criterion-problem">{{ s.problem }}</div>
+        {% endif %}
+      </div>
+      <div class="criterion-score-block">
+        <div class="score-badge" style="color: {{ s.color }};">{{ s.score }}</div>
+        <div class="score-label">из 10</div>
+        <div class="bar-track">
+          <div class="bar-fill" style="width: {{ s.score * 10 }}%; background: {{ s.color }};"></div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="cta-block">
+    <h2>Хотите сайт с оценкой 10/10?</h2>
+    <p>Я помогу исправить все выявленные проблемы и вывести сайт на максимальный результат.</p>
+    {% if owner_username %}
+    <a class="cta-btn" href="https://t.me/{{ owner_username }}">Написать в Telegram</a>
+    {% else %}
+    <a class="cta-btn" href="https://t.me/">Написать в Telegram</a>
+    {% endif %}
+  </div>
+
+  <div class="footer">
+    Отчёт сформирован автоматически · {{ date }}
+  </div>
+
+</div>
+</body>
+</html>
