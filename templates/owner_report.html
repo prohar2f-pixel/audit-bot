@@ -174,11 +174,23 @@
         <div class="info-card-value">{{ date }}</div>
       </div>
       <div class="info-card">
-        <div class="info-card-label">Средняя оценка</div>
-        <div class="info-card-value" style="color: {{ average_color }};">{{ average }} / 10</div>
+        <div class="info-card-label">Оценка сайта</div>
+        <div class="info-card-value" style="color: {{ average_color }};">{{ average }}/10 &nbsp;[{{ letter_grade }}]</div>
       </div>
     </div>
+    {% if express_summary %}
+    <div style="margin-top:16px;padding:14px 18px;background:rgba(255,255,255,.06);border-radius:10px;font-size:14px;color:#cbd5e1;line-height:1.6;">{{ express_summary }}</div>
+    {% endif %}
   </div>
+
+  {% if top3_names %}
+  <div style="background:#fff7ed;border:1px solid #f97316;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+    <div style="font-size:12px;font-weight:700;color:#c2410c;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;">Начать с этих трёх</div>
+    {% for name in top3_names %}
+    <div style="font-size:14px;color:#7c2d12;margin-bottom:4px;">{{ loop.index }}. {{ name }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <div class="score-summary">
     {% for s in scores %}

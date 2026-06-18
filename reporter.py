@@ -42,12 +42,19 @@ class Reporter:
             {**s, "color": _color(s["score"])}
             for s in result["scores"]
         ]
+        top3_ids = set(result.get("top3_priority", []))
+        top3_names = [
+            s["name"] for s in result["scores"] if s["id"] in top3_ids
+        ]
         html = self._env.get_template("client_report.html").render(
             url=result["url"],
             date=result["date"],
             scores=scores,
             average=result["average_score"],
             average_color=_color(int(result["average_score"])),
+            letter_grade=result.get("letter_grade", ""),
+            express_summary=result.get("express_summary", ""),
+            top3_names=top3_names,
             owner_username=os.environ.get("OWNER_TELEGRAM_USERNAME", ""),
         )
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -63,12 +70,19 @@ class Reporter:
                 {**s, "color": _color(s["score"]),
                  "priority": prio_label, "priority_color": prio_color}
             )
+        top3_ids = set(result.get("top3_priority", []))
+        top3_names = [
+            s["name"] for s in result["scores"] if s["id"] in top3_ids
+        ]
         html = self._env.get_template("owner_report.html").render(
             url=result["url"],
             date=result["date"],
             scores=scores,
             average=result["average_score"],
             average_color=_color(int(result["average_score"])),
+            letter_grade=result.get("letter_grade", ""),
+            express_summary=result.get("express_summary", ""),
+            top3_names=top3_names,
             client_name=user.full_name or user.first_name or "Не указано",
             client_telegram=(
                 f"@{user.username}" if user.username else f"ID: {user.id}"

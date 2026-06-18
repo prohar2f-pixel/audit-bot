@@ -199,10 +199,22 @@
       <span class="denom">из 10</span>
     </div>
     <div class="score-hero-text">
-      <h2>Средняя оценка сайта</h2>
-      <p>Ниже — детальный разбор по каждому из 10 критериев. Оценка показывает насколько хорошо ваш сайт справляется с задачей привлечения и конвертации посетителей.</p>
+      <h2>Готовность сайта к продажам: <span style="color:{{ average_color }}">{{ letter_grade }}</span></h2>
+      {% if express_summary %}
+      <p style="margin-bottom:10px;">{{ express_summary }}</p>
+      {% endif %}
+      <p style="color:#94a3b8;font-size:13px;">Шкала: A — отлично, B — хорошо, C — удовлетворительно, D — плохо, F — критично</p>
     </div>
   </div>
+
+  {% if top3_names %}
+  <div style="background:#fef3c7;border:1px solid #f59e0b;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+    <div style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:8px;text-transform:uppercase;letter-spacing:.06em;">С чего начать прямо сейчас</div>
+    {% for name in top3_names %}
+    <div style="font-size:14px;color:#78350f;margin-bottom:4px;">{{ loop.index }}. {{ name }}</div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   <div class="section-title">Результаты по критериям</div>
 

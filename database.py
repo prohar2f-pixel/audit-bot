@@ -76,6 +76,24 @@ class Database:
             "UPDATE audits SET status = 'failed' WHERE id = $1", audit_id
         )
 
+    async def get_last_audit(self, telegram_id: int, url: str) -> dict | None:
+        row = await self.pool.fetchrow("""
+            SELECT average_score, scores_json, created_at
+            FROM audits
+            WHERE user_telegram_id = $1
+              AND url = $2
+              AND status = 'completed'
+            ORDER BY created_at DESC
+            LIMIT 1
+        """, telegram_id, url)
+        if row is None:
+            return None
+        return {
+            "average_score": row["average_score"],
+            "scores_json": row["scores_json"],
+            "date": row["created_at"].strftime("%d.%m.%Y"),
+        }
+
     async def delete_user_data(self, telegram_id: int):
         await self.pool.execute(
             "DELETE FROM audits WHERE user_telegram_id = $1", telegram_id

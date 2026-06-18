@@ -244,52 +244,88 @@ class Auditor:
             "ssl_expiry": ssl_expiry,
         }
 
+    # ─── helpers ─────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def letter_grade(avg: float) -> str:
+        if avg >= 9:
+            return "A"
+        if avg >= 8:
+            return "B+"
+        if avg >= 7:
+            return "B"
+        if avg >= 6:
+            return "C+"
+        if avg >= 5:
+            return "C"
+        if avg >= 4:
+            return "D+"
+        if avg >= 3:
+            return "D"
+        return "F"
+
     # ─── claude ──────────────────────────────────────────────────────────────
 
     async def _claude_analysis(
         self, url: str, crawl: dict, ps: dict, sec: dict
     ) -> dict:
-        prompt = f"""Ты эксперт по веб-разработке и SEO. Проведи аудит сайта {url}.
+        prompt = f"""Ты эксперт по веб-разработке, SEO и конверсионному маркетингу.
+Твоя задача — провести аудит сайта {url} и выдать оценки понятным языком для владельца малого бизнеса.
 
-## Данные краулера:
+## Технические данные (краулер):
 - Title: {crawl.get('title') or 'Не найден'}
 - Meta description: {(crawl.get('meta_description') or 'Отсутствует')[:200]}
 - Meta viewport: {crawl.get('meta_viewport') or 'Отсутствует'}
 - H1: {crawl.get('h1', [])}
 - H2 (первые 5): {crawl.get('h2', [])[:5]}
-- Ссылки в навигации: {crawl.get('nav_links', [])}
+- Навигация: {crawl.get('nav_links', [])}
 - Формы: {json.dumps(crawl.get('forms', []), ensure_ascii=False)[:500]}
-- CTA-кнопки: {crawl.get('cta_buttons', [])}
+- CTA-кнопки найдены: {crawl.get('cta_buttons', [])}
 - Телефонные ссылки tel:: {crawl.get('tel_links', [])}
-- Изображений всего: {crawl.get('images_total', 0)}, без alt: {crawl.get('images_no_alt', 0)}
+- Изображений: {crawl.get('images_total', 0)}, без alt: {crawl.get('images_no_alt', 0)}
 - robots.txt: {crawl.get('robots_txt')}, sitemap.xml: {crawl.get('sitemap_xml')}
-- HTTPS: {crawl.get('is_https')}, media queries в CSS: {crawl.get('has_media_queries')}
+- HTTPS: {crawl.get('is_https')}, media queries: {crawl.get('has_media_queries')}
 
-## PageSpeed (мобильная версия):
+## PageSpeed (мобильная):
 - Производительность: {ps.get('performance', 'N/A')}/10
 - SEO: {ps.get('seo', 'N/A')}/10
 - Доступность: {ps.get('accessibility', 'N/A')}/10
 - Best practices: {ps.get('best_practices', 'N/A')}/10
-- FCP: {ps.get('fcp', 'N/A')}
-- Speed Index: {ps.get('speed_index', 'N/A')}
-- TTI: {ps.get('tti', 'N/A')}
-- TTFB: {ps.get('ttfb_ms', 0):.0f} мс
-- LCP: {ps.get('lcp', 'N/A')}, CLS: {ps.get('cls', 'N/A')}
+- FCP: {ps.get('fcp', 'N/A')}, LCP: {ps.get('lcp', 'N/A')}, CLS: {ps.get('cls', 'N/A')}
+- TTI: {ps.get('tti', 'N/A')}, TTFB: {ps.get('ttfb_ms', 0):.0f} мс
 
 ## Безопасность:
-- HTTPS: {sec.get('is_https')}, SSL валиден: {sec.get('ssl_valid')}, истекает: {sec.get('ssl_expiry') or 'N/A'}
+- HTTPS: {sec.get('is_https')}, SSL: {sec.get('ssl_valid')}, истекает: {sec.get('ssl_expiry') or 'N/A'}
 
-## Текст страницы (фрагмент):
+## Контент страницы (читай внимательно — это основа для оценки качества контента):
 {crawl.get('text_content', '')[:2500]}
 
 ---
 
-Выставь оценку 1-10 по каждому из 10 критериев.
-Верни ТОЛЬКО валидный JSON без объяснений:
+ВАЖНО: пиши на русском языке для владельца бизнеса, не для SEO-специалиста.
+- В поле "problem" — объясни ущерб для бизнеса (потеря клиентов, денег, позиций). 1-2 предложения.
+- В поле "recommendation" — конкретные шаги как исправить. 3-5 предложений с примерами.
+- Если проблем нет — напиши что всё хорошо.
+
+Для критерия "Качество контента" оцени:
+  — Понятно ли за 5 секунд что предлагает сайт (оффер)
+  — Убедителен ли заголовок/H1
+  — Есть ли конкретные выгоды или только общие слова («профессионально», «качественно»)
+  — Есть ли доверительные сигналы (отзывы, кейсы, гарантии, контакты)
+  — Грамотность и читаемость текста
+
+Для критерия "Наличие CTA" оцени:
+  — Есть ли призыв к действию выше линии сгиба (первый экран)
+  — Конкретен ли CTA («Записаться на консультацию») или абстрактен («Узнать больше»)
+  — Сколько CTA-элементов, не перегружен ли экран
+
+Верни ТОЛЬКО валидный JSON без лишнего текста:
 
 {{
+  "express_summary": "<3-4 предложения общего впечатления о сайте для владельца. Что бросается в глаза сразу. Начни с самой острой проблемы.>",
+  "top3_priority": [<id критерия>, <id критерия>, <id критерия>],
   "scores": [
-    {{"id": 1, "name": "Скорость загрузки", "score": <1-10>, "problem": "<1-2 предл. для клиента>", "recommendation": "<3-5 предл. конкретных рекомендаций для исполнителя>"}},
+    {{"id": 1, "name": "Скорость загрузки", "score": <1-10>, "problem": "<для клиента>", "recommendation": "<для исполнителя>"}},
     {{"id": 2, "name": "Мобильная версия", "score": <1-10>, "problem": "...", "recommendation": "..."}},
     {{"id": 3, "name": "SEO оптимизация", "score": <1-10>, "problem": "...", "recommendation": "..."}},
     {{"id": 4, "name": "Безопасность", "score": <1-10>, "problem": "...", "recommendation": "..."}},
@@ -302,7 +338,7 @@ class Auditor:
   ]
 }}
 
-Шкала: 9-10 отлично, 7-8 хорошо, 5-6 удовлетворительно, 3-4 плохо, 1-2 критично."""
+Шкала оценок: 9-10 отлично, 7-8 хорошо, 5-6 удовлетворительно, 3-4 плохо, 1-2 критично."""
 
         response = await self._claude.messages.create(
             model="claude-sonnet-4-6",
@@ -327,4 +363,7 @@ class Auditor:
             "date": datetime.now().strftime("%d.%m.%Y %H:%M"),
             "scores": scores,
             "average_score": avg,
+            "letter_grade": self.letter_grade(avg),
+            "express_summary": data.get("express_summary", ""),
+            "top3_priority": data.get("top3_priority", []),
         }

@@ -38,9 +38,24 @@ def _score_line(score: int, name: str) -> str:
     return f"[{indicator}] {name}: {score}/10"
 
 
-def _quick_results(scores: list, average: float) -> str:
-    lines = [_score_line(s["score"], s["name"]) for s in scores]
-    return "\n".join(lines) + f"\n\nСредняя оценка: {average}/10"
+def _quick_results(result: dict, prev: dict | None = None) -> str:
+    scores = result["scores"]
+    avg = result["average_score"]
+    grade = result.get("letter_grade", "")
+    top3 = set(result.get("top3_priority", []))
+
+    lines = []
+    for s in scores:
+        marker = "(!)" if s["id"] in top3 else "   "
+        lines.append(f"{marker} {_score_line(s['score'], s['name'])}")
+
+    summary = f"Оценка: {avg}/10  [{grade}]"
+    if prev:
+        diff = round(avg - prev["average_score"], 1)
+        sign = "+" if diff >= 0 else ""
+        summary += f"  (было {prev['average_score']}/10, {sign}{diff})"
+
+    return "\n".join(lines) + f"\n\n{summary}"
 
 
 # ─── handlers ───────────────────────────────────────────────────────────────
@@ -102,6 +117,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    prev = await db.get_last_audit(user.id, url)
+
     progress = await update.message.reply_text("Начинаю проверку сайта...")
     audit_id = await db.create_audit(user.id, url)
 
@@ -121,10 +138,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         client_path = reporter.generate_client_report(result)
         owner_path = reporter.generate_owner_report(result, user)
 
-        quick = _quick_results(result["scores"], result["average_score"])
-        await progress.edit_text(
-            f"Проверка завершена!\n\n{quick}\n\nОтправляю полный отчёт..."
-        )
+        quick = _quick_results(result, prev)
+        express = result.get("express_summary", "")
+
+        summary_text = "Проверка завершена!"
+        if express:
+            summary_text += f"\n\n{express}"
+        summary_text += f"\n\n{quick}\n\n(!) — приоритет исправления\n\nОтправляю полный отчёт..."
+
+        await progress.edit_text(summary_text)
 
         with open(client_path, "rb") as f:
             domain = url.replace("https://", "").replace("http://", "").split("/")[0]
@@ -133,6 +155,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 filename=f"audit_{domain}.html",
                 caption="Ваш полный отчёт по аудиту сайта.",
             )
+
+        grade = result.get("letter_grade", "")
+        avg = result["average_score"]
 
         keyboard = []
         if OWNER_TELEGRAM_USERNAME:
@@ -145,13 +170,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
         await update.message.reply_text(
-            f"Сайт набрал {result['average_score']}/10.\n\n"
-            "Хотите довести сайт до 10/10? "
-            "Я помогу исправить все выявленные проблемы.",
+            f"Сайт набрал {avg}/10 [{grade}].\n\n"
+            "Хотите довести до оценки A (9-10)? "
+            "Помогу исправить все выявленные проблемы.",
             reply_markup=reply_markup,
         )
 
-        await _notify_owner(context, user, url, result, owner_path)
+        await _notify_owner(context, user, url, result, owner_path, prev)
 
     except Exception as exc:
         logger.error("Audit failed: %s", exc, exc_info=True)
@@ -161,21 +186,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-async def _notify_owner(context, user, url: str, result: dict, owner_path: str):
+async def _notify_owner(
+    context, user, url: str, result: dict, owner_path: str, prev: dict | None = None
+):
     try:
         name = user.full_name or user.first_name or "Не указано"
         handle = f"@{user.username}" if user.username else f"ID: {user.id}"
         avg = result["average_score"]
-        quick = _quick_results(result["scores"], avg)
+        grade = result.get("letter_grade", "")
+        quick = _quick_results(result, prev)
 
-        await context.bot.send_message(
-            OWNER_TELEGRAM_ID,
+        header = (
             f"Новая проверка сайта!\n\n"
             f"Клиент: {name} ({handle})\n"
             f"Сайт: {url}\n"
-            f"Средняя оценка: {avg}/10\n\n"
-            f"{quick}",
+            f"Оценка: {avg}/10 [{grade}]\n\n"
         )
+        if result.get("express_summary"):
+            header += f"{result['express_summary']}\n\n"
+        header += quick
+
+        await context.bot.send_message(OWNER_TELEGRAM_ID, header)
         with open(owner_path, "rb") as f:
             domain = url.replace("https://", "").replace("http://", "").split("/")[0]
             await context.bot.send_document(
