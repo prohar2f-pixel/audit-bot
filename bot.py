@@ -64,7 +64,11 @@ def _quick_results(result: dict, prev: dict | None = None) -> str:
 # ─── handlers ───────────────────────────────────────────────────────────────
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await db.ensure_user(update.effective_user)
+    if db.pool is not None:
+        try:
+            await db.ensure_user(update.effective_user)
+        except Exception as exc:
+            logger.error("ensure_user in cmd_start failed: %s", exc)
     await update.message.reply_text(
         "Привет! Я проверю ваш сайт по 10 критериям и пришлю детальный отчёт.\n\n"
         "Что проверяю:\n"
@@ -104,7 +108,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     raw = update.message.text.strip()
 
-    await db.ensure_user(user)
+    db_ok = db.pool is not None
+
+    if db_ok:
+        try:
+            await db.ensure_user(user)
+        except Exception as exc:
+            logger.error("ensure_user failed: %s", exc)
+            db_ok = False
 
     url = auditor.normalize_url(raw)
     if not url:
@@ -115,40 +126,63 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    if await db.has_active_audit(user.id):
-        await update.message.reply_text(
-            "У вас уже идёт проверка. Дождитесь её завершения."
-        )
-        return
+    if db_ok:
+        try:
+            if await db.has_active_audit(user.id):
+                await update.message.reply_text(
+                    "У вас уже идёт проверка. Дождитесь её завершения."
+                )
+                return
+        except Exception as exc:
+            logger.error("has_active_audit failed: %s", exc)
+            db_ok = False
 
-    prev = await db.get_last_audit(user.id, url)
-
-    if prev:
-        age = datetime.now() - prev["created_at"].replace(tzinfo=None)
-        if age < timedelta(days=7):
-            days_left = 7 - age.days
-            await update.message.reply_text(
-                f"Этот сайт уже проверялся {prev['date']}.\n"
-                f"Повторная проверка откроется через {days_left} дн.\n\n"
-                "Хотите проверить другой сайт — пришлите другую ссылку."
-            )
-            return
+    prev = None
+    if db_ok:
+        try:
+            prev = await db.get_last_audit(user.id, url)
+            if prev:
+                age = datetime.now() - prev["created_at"].replace(tzinfo=None)
+                if age < timedelta(days=7):
+                    days_left = 7 - age.days
+                    await update.message.reply_text(
+                        f"Этот сайт уже проверялся {prev['date']}.\n"
+                        f"Повторная проверка откроется через {days_left} дн.\n\n"
+                        "Хотите проверить другой сайт — пришлите другую ссылку."
+                    )
+                    return
+        except Exception as exc:
+            logger.error("get_last_audit failed: %s", exc)
 
     progress = await update.message.reply_text("Начинаю проверку сайта...")
-    audit_id = await db.create_audit(user.id, url)
+    audit_id = None
+    if db_ok:
+        try:
+            audit_id = await db.create_audit(user.id, url)
+        except Exception as exc:
+            logger.error("create_audit failed: %s", exc)
+            db_ok = False
 
     try:
         result = await auditor.run_audit(url, progress)
 
         if result is None:
-            await db.fail_audit(audit_id)
+            if audit_id:
+                try:
+                    await db.fail_audit(audit_id)
+                except Exception:
+                    pass
             await progress.edit_text(
                 "Сайт недоступен или не отвечает.\n\n"
                 "Проверьте правильность ссылки и попробуйте ещё раз."
             )
             return
 
-        await db.complete_audit(audit_id, result)
+        if audit_id:
+            try:
+                await db.complete_audit(audit_id, result)
+            except Exception as exc:
+                logger.error("complete_audit failed: %s", exc)
 
         client_path = reporter.generate_client_report(result)
         owner_path = reporter.generate_owner_report(result, user)
@@ -196,7 +230,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as exc:
         logger.error("Audit failed: %s", exc, exc_info=True)
-        await db.fail_audit(audit_id)
+        if audit_id:
+            try:
+                await db.fail_audit(audit_id)
+            except Exception:
+                pass
         await progress.edit_text(
             "Произошла ошибка при проверке. Попробуйте позже."
         )
@@ -283,9 +321,21 @@ async def web_audit(request: aiohttp.web.Request) -> aiohttp.web.Response:
 
 # ─── main ────────────────────────────────────────────────────────────────────
 
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
+    logger.error("Unhandled exception in handler: %s", context.error, exc_info=context.error)
+    if isinstance(update, Update) and update.message:
+        try:
+            await update.message.reply_text("Произошла ошибка. Попробуйте позже.")
+        except Exception:
+            pass
+
+
 async def post_init(app: Application):
-    await db.connect()
-    logger.info("Database connected")
+    try:
+        await db.connect()
+        logger.info("Database connected")
+    except Exception as exc:
+        logger.error("Database connection failed: %s", exc, exc_info=True)
 
 
 async def main():
@@ -312,6 +362,7 @@ async def main():
     bot_app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
+    bot_app.add_error_handler(error_handler)
 
     logger.info("Bot starting...")
     async with bot_app:
