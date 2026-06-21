@@ -25,6 +25,7 @@ CRITERIA_NAMES = [
     "Работоспособность форм",
     "Адаптивность дизайна",
     "Скорость отклика сервера",
+    "Видимость в ИИ-поисковиках",
 ]
 
 _URL_RE = re.compile(r"^https?://[^\s/$.?#].[^\s]*$")
@@ -157,15 +158,55 @@ class Auditor:
                 "@media" in (s.get_text() or "") for s in soup.find_all("style")
             )
 
+            # AEO: extract JSON-LD BEFORE removing scripts
+            json_ld_types = []
+            has_speakable = False
+            for script in soup.find_all("script", type="application/ld+json"):
+                raw = script.string or ""
+                try:
+                    data = json.loads(raw)
+                    if isinstance(data, dict):
+                        for item in data.get("@graph", [data]):
+                            if isinstance(item, dict) and "@type" in item:
+                                json_ld_types.append(item["@type"])
+                    if "speakable" in raw.lower():
+                        has_speakable = True
+                except Exception:
+                    pass
+
             # Remove script/style so Claude gets only visible text, not JS code
             for tag in soup(["script", "style"]):
                 tag.decompose()
 
+            # AEO: FAQ detection (after decompose — visible text only)
+            has_faq = bool(
+                soup.find("details") or
+                soup.find("summary") or
+                any(
+                    "вопрос" in h.get_text().lower() or "faq" in h.get_text().lower()
+                    for h in soup.find_all(["h2", "h3"])
+                )
+            )
+
+            # AEO: meta robots max-snippet
+            has_ai_snippet_meta = False
+            for m in soup.find_all("meta", attrs={"name": "robots"}):
+                if "max-snippet" in (m.get("content") or "").lower():
+                    has_ai_snippet_meta = True
+
             base = f"{url.split('//')[0]}//{url.split('/')[2]}"
             robots_ok = sitemap_ok = False
+            ai_bots_allowed = False
             async with httpx.AsyncClient(timeout=5, headers=_HEADERS) as c:
                 try:
-                    robots_ok = (await c.get(f"{base}/robots.txt")).status_code == 200
+                    r = await c.get(f"{base}/robots.txt")
+                    robots_ok = r.status_code == 200
+                    if robots_ok:
+                        robots_text = r.text.lower()
+                        ai_bots_allowed = any(
+                            bot in robots_text
+                            for bot in ["gptbot", "claudebot", "perplexitybot", "anthropic-ai"]
+                        )
                 except Exception:
                     pass
                 try:
@@ -195,6 +236,11 @@ class Auditor:
                 "is_https": url.startswith("https://"),
                 "text_content": text,
                 "is_likely_spa": is_likely_spa,
+                "json_ld_types": json_ld_types,
+                "has_speakable": has_speakable,
+                "has_faq": has_faq,
+                "has_ai_snippet_meta": has_ai_snippet_meta,
+                "ai_bots_allowed": ai_bots_allowed,
             }
 
         except (httpx.ConnectError, httpx.TimeoutException):
@@ -323,6 +369,14 @@ class Auditor:
 ## Безопасность:
 - HTTPS: {sec.get('is_https')}, SSL: {sec.get('ssl_valid')}, истекает: {sec.get('ssl_expiry') or 'N/A'}
 
+## AEO (Видимость в ИИ-поисковиках — ChatGPT, Perplexity, Claude):
+- JSON-LD типы найдены: {crawl.get('json_ld_types') or 'нет'}
+- Speakable specification: {crawl.get('has_speakable', False)}
+- FAQ-секция на странице: {crawl.get('has_faq', False)}
+- Meta robots max-snippet: {crawl.get('has_ai_snippet_meta', False)}
+- AI-боты в robots.txt (GPTBot, ClaudeBot, PerplexityBot): {crawl.get('ai_bots_allowed', False)}
+- sitemap.xml: {crawl.get('sitemap_xml', False)}
+
 ## Контент страницы (читай внимательно — это основа для оценки качества контента):
 {crawl.get('text_content', '')[:2500]}
 
@@ -339,6 +393,14 @@ class Auditor:
   — Есть ли конкретные выгоды или только общие слова («профессионально», «качественно»)
   — Есть ли доверительные сигналы (отзывы, кейсы, гарантии, контакты)
   — Грамотность и читаемость текста
+
+Для критерия "Видимость в ИИ-поисковиках" оцени:
+  — Есть ли JSON-LD разметка (Person, Service, FAQPage, HowTo, Organization)?
+  — Есть ли FAQ-секция с конкретными фактами (ценами, сроками)?
+  — Разрешён ли доступ для AI-краулеров (GPTBot, ClaudeBot) в robots.txt?
+  — Есть ли sitemap.xml и meta robots max-snippet?
+  — Достаточно ли конкретных данных (цены, сроки, контакты) для цитирования ИИ?
+  Оценка 10 = всё есть. Оценка 1 = ChatGPT/Perplexity не смогут найти и процитировать сайт.
 
 Для критерия "Наличие CTA" оцени:
   — Есть ли призыв к действию выше линии сгиба (первый экран)
@@ -360,7 +422,8 @@ class Auditor:
     {{"id": 7, "name": "Наличие CTA", "score": <1-10>, "problem": "...", "recommendation": "..."}},
     {{"id": 8, "name": "Работоспособность форм", "score": <1-10>, "problem": "...", "recommendation": "..."}},
     {{"id": 9, "name": "Адаптивность дизайна", "score": <1-10>, "problem": "...", "recommendation": "..."}},
-    {{"id": 10, "name": "Скорость отклика сервера", "score": <1-10>, "problem": "...", "recommendation": "..."}}
+    {{"id": 10, "name": "Скорость отклика сервера", "score": <1-10>, "problem": "...", "recommendation": "..."}},
+    {{"id": 11, "name": "Видимость в ИИ-поисковиках", "score": <1-10>, "problem": "<что мешает ChatGPT/Perplexity найти сайт>", "recommendation": "<конкретные шаги: JSON-LD, FAQ, robots.txt для AI-ботов>"}}
   ]
 }}
 
