@@ -1,7 +1,9 @@
 import asyncio
 import logging
+import os
 from datetime import datetime, timedelta
 
+import aiohttp.web
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
     Application,
@@ -234,6 +236,51 @@ async def _notify_owner(
         logger.error("Owner notify failed: %s", exc)
 
 
+# ─── web API ─────────────────────────────────────────────────────────────────
+
+@aiohttp.web.middleware
+async def cors_middleware(request: aiohttp.web.Request, handler):
+    if request.method == "OPTIONS":
+        return aiohttp.web.Response(
+            status=200,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            },
+        )
+    response = await handler(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    return response
+
+
+async def health_check(request: aiohttp.web.Request) -> aiohttp.web.Response:
+    return aiohttp.web.json_response({"status": "ok"})
+
+
+async def web_audit(request: aiohttp.web.Request) -> aiohttp.web.Response:
+    try:
+        data = await request.json()
+    except Exception:
+        return aiohttp.web.json_response({"error": "Неверный формат запроса"}, status=400)
+
+    raw_url = (data.get("url") or "").strip()
+    url = auditor.normalize_url(raw_url)
+    if not url:
+        return aiohttp.web.json_response({"error": "Неверный URL"}, status=400)
+
+    try:
+        result = await auditor.run_audit(url)
+    except Exception as exc:
+        logger.error("Web audit failed: %s", exc, exc_info=True)
+        return aiohttp.web.json_response({"error": "Ошибка при проверке"}, status=500)
+
+    if result is None:
+        return aiohttp.web.json_response({"error": "Сайт недоступен или не отвечает"}, status=503)
+
+    return aiohttp.web.json_response(result)
+
+
 # ─── main ────────────────────────────────────────────────────────────────────
 
 async def post_init(app: Application):
@@ -241,24 +288,37 @@ async def post_init(app: Application):
     logger.info("Database connected")
 
 
-def main():
-    app = (
+async def main():
+    # Web server
+    web_app = aiohttp.web.Application(middlewares=[cors_middleware])
+    web_app.router.add_get("/health", health_check)
+    web_app.router.add_post("/audit", web_audit)
+    runner = aiohttp.web.AppRunner(web_app)
+    await runner.setup()
+    port = int(os.environ.get("PORT", 8080))
+    await aiohttp.web.TCPSite(runner, "0.0.0.0", port).start()
+    logger.info("Web server started on :%d", port)
+
+    # Telegram bot
+    bot_app = (
         Application.builder()
         .token(BOT_TOKEN)
         .post_init(post_init)
         .build()
     )
-
-    app.add_handler(CommandHandler("start", cmd_start))
-    app.add_handler(CommandHandler("help", cmd_help))
-    app.add_handler(CommandHandler("delete", cmd_delete))
-    app.add_handler(
+    bot_app.add_handler(CommandHandler("start", cmd_start))
+    bot_app.add_handler(CommandHandler("help", cmd_help))
+    bot_app.add_handler(CommandHandler("delete", cmd_delete))
+    bot_app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
     )
 
     logger.info("Bot starting...")
-    app.run_polling(drop_pending_updates=True)
+    async with bot_app:
+        await bot_app.start()
+        await bot_app.updater.start_polling(drop_pending_updates=True)
+        await asyncio.Event().wait()
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

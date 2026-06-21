@@ -50,8 +50,12 @@ class Auditor:
             url = "https://" + url
         return url if _URL_RE.match(url) else None
 
-    async def run_audit(self, url: str, progress_msg) -> dict | None:
-        await progress_msg.edit_text(
+    async def run_audit(self, url: str, progress_msg=None) -> dict | None:
+        async def _step(text: str):
+            if progress_msg:
+                await progress_msg.edit_text(text)
+
+        await _step(
             "Шаг 1/4 — Загружаю страницу\n"
             "Ищу заголовки, SEO-теги, формы, CTA-кнопки..."
         )
@@ -63,17 +67,17 @@ class Auditor:
         cta_count = len(crawl.get("cta_buttons", []))
         forms_count = len(crawl.get("forms", []))
         ssl_ok = "да" if crawl.get("is_https") else "нет"
-        robots_ok = "есть" if crawl.get("robots_txt") else "нет"
+        robots_ok_str = "есть" if crawl.get("robots_txt") else "нет"
         spa_note = "\nВнимание: сайт на JS (React/Vue) — часть данных недоступна" if crawl.get("is_likely_spa") else ""
 
-        await progress_msg.edit_text(
+        await _step(
             f"Нашёл: H1 — {h1_count}, CTA-кнопок — {cta_count}, форм — {forms_count}\n"
-            f"HTTPS: {ssl_ok}, robots.txt: {robots_ok}{spa_note}\n\n"
+            f"HTTPS: {ssl_ok}, robots.txt: {robots_ok_str}{spa_note}\n\n"
             "Шаг 2/4 — Проверяю скорость через PageSpeed (до 40 сек)..."
         )
         pagespeed = await self._pagespeed(url)
 
-        await progress_msg.edit_text("Шаг 3/4 — Проверяю SSL-сертификат...")
+        await _step("Шаг 3/4 — Проверяю SSL-сертификат...")
         security = self._check_security(url, crawl)
 
         if pagespeed:
@@ -89,7 +93,7 @@ class Auditor:
                 "PageSpeed не ответил — продолжаю без данных о скорости\n\n"
                 "Шаг 4/4 — ИИ читает контент и считает оценки (10-20 сек)..."
             )
-        await progress_msg.edit_text(step4)
+        await _step(step4)
 
         result = await self._claude_analysis(url, crawl, pagespeed, security)
         return result
