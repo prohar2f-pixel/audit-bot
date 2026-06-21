@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from datetime import datetime, timedelta
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.ext import (
@@ -11,7 +12,7 @@ from telegram.ext import (
 )
 
 from auditor import Auditor
-from config import BOT_TOKEN, OWNER_TELEGRAM_ID, OWNER_TELEGRAM_USERNAME
+from config import BOT_TOKEN, OWNER_BIO, OWNER_TELEGRAM_ID, OWNER_TELEGRAM_USERNAME
 from database import Database
 from reporter import Reporter
 
@@ -119,6 +120,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     prev = await db.get_last_audit(user.id, url)
 
+    if prev:
+        age = datetime.now() - prev["created_at"].replace(tzinfo=None)
+        if age < timedelta(days=7):
+            days_left = 7 - age.days
+            await update.message.reply_text(
+                f"Этот сайт уже проверялся {prev['date']}.\n"
+                f"Повторная проверка откроется через {days_left} дн.\n\n"
+                "Хотите проверить другой сайт — пришлите другую ссылку."
+            )
+            return
+
     progress = await update.message.reply_text("Начинаю проверку сайта...")
     audit_id = await db.create_audit(user.id, url)
 
@@ -169,8 +181,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ])
 
         reply_markup = InlineKeyboardMarkup(keyboard) if keyboard else None
+        bio_block = f"\n\n{OWNER_BIO}" if OWNER_BIO else ""
         await update.message.reply_text(
-            f"Сайт набрал {avg}/10 [{grade}].\n\n"
+            f"Сайт набрал {avg}/10 [{grade}].{bio_block}\n\n"
             "Хотите довести до оценки A (9-10)? "
             "Помогу исправить все выявленные проблемы.",
             reply_markup=reply_markup,
@@ -196,8 +209,9 @@ async def _notify_owner(
         grade = result.get("letter_grade", "")
         quick = _quick_results(result, prev)
 
+        lead_label = "ГОРЯЧИЙ ЛИД (оценка < 5)!\n\n" if avg < 5 else ""
         header = (
-            f"Новая проверка сайта!\n\n"
+            f"{lead_label}Новая проверка сайта!\n\n"
             f"Клиент: {name} ({handle})\n"
             f"Сайт: {url}\n"
             f"Оценка: {avg}/10 [{grade}]\n\n"

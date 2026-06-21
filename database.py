@@ -92,6 +92,7 @@ class Database:
             "average_score": row["average_score"],
             "scores_json": row["scores_json"],
             "date": row["created_at"].strftime("%d.%m.%Y"),
+            "created_at": row["created_at"],
         }
 
     async def delete_user_data(self, telegram_id: int):

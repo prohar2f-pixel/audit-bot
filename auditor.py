@@ -55,6 +55,13 @@ class Auditor:
         if crawl is None:
             return None
 
+        if crawl.get("is_likely_spa"):
+            await progress_msg.edit_text(
+                "Сайт на JavaScript (React/Vue/Next.js/Tilda).\n"
+                "Аудит продолжается — некоторые критерии могут быть неточными."
+            )
+            await asyncio.sleep(3)
+
         await progress_msg.edit_text(
             "Проверяю скорость загрузки через PageSpeed Insights\n(занимает до 40 секунд)..."
         )
@@ -63,13 +70,12 @@ class Auditor:
         await progress_msg.edit_text("Проверяю SSL и безопасность...")
         security = self._check_security(url, crawl)
 
-        await progress_msg.edit_text(
-            "Анализирую контент, SEO, навигацию, формы, CTA..."
-        )
+        if pagespeed:
+            step = "Формирую оценки с помощью ИИ (занимает 10-20 секунд)..."
+        else:
+            step = "PageSpeed не ответил — продолжаю без данных о скорости.\nФормирую оценки с помощью ИИ..."
+        await progress_msg.edit_text(step)
 
-        await progress_msg.edit_text(
-            "Формирую оценки с помощью ИИ (занимает 10-20 секунд)..."
-        )
         result = await self._claude_analysis(url, crawl, pagespeed, security)
         return result
 
@@ -137,6 +143,10 @@ class Auditor:
                 "@media" in (s.get_text() or "") for s in soup.find_all("style")
             )
 
+            # Remove script/style so Claude gets only visible text, not JS code
+            for tag in soup(["script", "style"]):
+                tag.decompose()
+
             base = f"{url.split('//')[0]}//{url.split('/')[2]}"
             robots_ok = sitemap_ok = False
             async with httpx.AsyncClient(timeout=5, headers=_HEADERS) as c:
@@ -150,6 +160,7 @@ class Auditor:
                     pass
 
             text = " ".join(soup.get_text().split())[:3000]
+            is_likely_spa = len(text) < 300 and not h1
 
             return {
                 "status_code": resp.status_code,
@@ -169,6 +180,7 @@ class Auditor:
                 "sitemap_xml": sitemap_ok,
                 "is_https": url.startswith("https://"),
                 "text_content": text,
+                "is_likely_spa": is_likely_spa,
             }
 
         except (httpx.ConnectError, httpx.TimeoutException):
