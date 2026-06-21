@@ -50,31 +50,45 @@ class Auditor:
         return url if _URL_RE.match(url) else None
 
     async def run_audit(self, url: str, progress_msg) -> dict | None:
-        await progress_msg.edit_text("Загружаю и анализирую страницу...")
+        await progress_msg.edit_text(
+            "Шаг 1/4 — Загружаю страницу\n"
+            "Ищу заголовки, SEO-теги, формы, CTA-кнопки..."
+        )
         crawl = await self._crawl(url)
         if crawl is None:
             return None
 
-        if crawl.get("is_likely_spa"):
-            await progress_msg.edit_text(
-                "Сайт на JavaScript (React/Vue/Next.js/Tilda).\n"
-                "Аудит продолжается — некоторые критерии могут быть неточными."
-            )
-            await asyncio.sleep(3)
+        h1_count = len(crawl.get("h1", []))
+        cta_count = len(crawl.get("cta_buttons", []))
+        forms_count = len(crawl.get("forms", []))
+        ssl_ok = "да" if crawl.get("is_https") else "нет"
+        robots_ok = "есть" if crawl.get("robots_txt") else "нет"
+        spa_note = "\nВнимание: сайт на JS (React/Vue) — часть данных недоступна" if crawl.get("is_likely_spa") else ""
 
         await progress_msg.edit_text(
-            "Проверяю скорость загрузки через PageSpeed Insights\n(занимает до 40 секунд)..."
+            f"Нашёл: H1 — {h1_count}, CTA-кнопок — {cta_count}, форм — {forms_count}\n"
+            f"HTTPS: {ssl_ok}, robots.txt: {robots_ok}{spa_note}\n\n"
+            "Шаг 2/4 — Проверяю скорость через PageSpeed (до 40 сек)..."
         )
         pagespeed = await self._pagespeed(url)
 
-        await progress_msg.edit_text("Проверяю SSL и безопасность...")
+        await progress_msg.edit_text("Шаг 3/4 — Проверяю SSL-сертификат...")
         security = self._check_security(url, crawl)
 
         if pagespeed:
-            step = "Формирую оценки с помощью ИИ (занимает 10-20 секунд)..."
+            perf = pagespeed.get("performance", "?")
+            seo_score = pagespeed.get("seo", "?")
+            fcp = pagespeed.get("fcp", "?")
+            step4 = (
+                f"PageSpeed: скорость {perf}/10, SEO {seo_score}/10, FCP {fcp}\n\n"
+                "Шаг 4/4 — ИИ читает контент и считает оценки (10-20 сек)..."
+            )
         else:
-            step = "PageSpeed не ответил — продолжаю без данных о скорости.\nФормирую оценки с помощью ИИ..."
-        await progress_msg.edit_text(step)
+            step4 = (
+                "PageSpeed не ответил — продолжаю без данных о скорости\n\n"
+                "Шаг 4/4 — ИИ читает контент и считает оценки (10-20 сек)..."
+            )
+        await progress_msg.edit_text(step4)
 
         result = await self._claude_analysis(url, crawl, pagespeed, security)
         return result
